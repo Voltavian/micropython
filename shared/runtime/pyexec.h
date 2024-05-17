@@ -35,19 +35,32 @@ typedef enum {
 
 extern pyexec_mode_kind_t pyexec_mode_kind;
 
-// Set this to the value (eg PYEXEC_FORCED_EXIT) that will be propagated through
-// the pyexec functions if a SystemExit exception is raised by the running code.
+// Set this to the value (eg PYEXEC_FORCED_EXIT)
+// that will be propagated through the pyexec functions
+// if a SystemExit exception is raised by the running code.
 // It will reset to 0 at the start of each execution (eg each REPL entry).
+//
+// If guard MICROPY_ENABLE_EXIT_CODE_HANDLING is enabled, system exit code will be set
+// according to the reason for exit and whether it was considered a success or not,
+// consistent with python sys.exit() call - https://docs.python.org/3/library/exceptions.html#SystemExit
 extern int pyexec_system_exit;
 
 #if MICROPY_ENABLE_VM_ABORT
-// Set this to the value (eg PYEXEC_FORCED_EXIT) that will be propagated through
+// Set this to the value (eg PYEXEC_ABORT) that will be propagated through
 // the pyexec functions if the VM is aborted for immediate exit.
 // It will reset to 0 at the start of each execution (eg each REPL entry).
 extern int pyexec_abort;
 #endif
 
 #define PYEXEC_FORCED_EXIT (0x100)
+
+#if MICROPY_ENABLE_EXIT_CODE_HANDLING
+#define PYEXEC_NORMAL_EXIT_0 (0)
+#define PYEXEC_UNHANDLED_EXCEPTION (1)
+#define PYEXEC_KEYBOARD_INTERRUPT (128 + 2) // same as SIG INT exit code
+#define PYEXEC_ABORT (128 + 9) // same as SIG KILL exit code
+#endif
+
 
 int pyexec_raw_repl(void);
 int pyexec_friendly_repl(void);

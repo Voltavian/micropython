@@ -46,8 +46,10 @@
 pyexec_mode_kind_t pyexec_mode_kind = PYEXEC_MODE_FRIENDLY_REPL;
 int pyexec_system_exit = 0;
 #if MICROPY_ENABLE_VM_ABORT
-int pyexec_abort = 0;
+int pyexec_abort = 0; // kept at 0 for backward compatibility
 #endif
+int pyexec_keyboard_interrupt = 0; // kept at 0 for backward compatibility
+
 
 #if MICROPY_REPL_INFO
 static bool repl_display_debugging_info = 0;
@@ -131,7 +133,11 @@ static int parse_compile_execute(const void *source, mp_parse_input_kind_t input
         mp_hal_set_interrupt_char(-1); // disable interrupt
         mp_handle_pending(true); // handle any pending exceptions (and any callbacks)
         nlr_pop();
+        #if MICROPY_ENABLE_EXIT_CODE_HANDLING
+        ret = PYEXEC_NORMAL_EXIT_0;
+        #else
         ret = 1;
+        #endif
         if (exec_flags & EXEC_FLAG_PRINT_EOF) {
             mp_hal_stdout_tx_strn("\x04", 1);
         }
@@ -155,12 +161,34 @@ static int parse_compile_execute(const void *source, mp_parse_input_kind_t input
             ret = pyexec_abort;
         } else
         #endif
+        #if MICROPY_ENABLE_EXIT_CODE_HANDLING
+        if (mp_obj_is_subclass_fast(MP_OBJ_FROM_PTR(((mp_obj_base_t *)nlr.ret_val)->type), MP_OBJ_FROM_PTR(&mp_type_KeyboardInterrupt))) { // keyboard interrupt
+            mp_obj_print_exception(&mp_plat_print, MP_OBJ_FROM_PTR(nlr.ret_val));
+            ret = PYEXEC_KEYBOARD_INTERRUPT;
+        } else
+        #endif
         if (mp_obj_is_subclass_fast(MP_OBJ_FROM_PTR(((mp_obj_base_t *)nlr.ret_val)->type), MP_OBJ_FROM_PTR(&mp_type_SystemExit))) { // system exit
-            // at the moment, the value of SystemExit is unused
+            #if MICROPY_ENABLE_EXIT_CODE_HANDLING
+                mp_obj_t val = mp_obj_exception_get_value(MP_OBJ_FROM_PTR(nlr.ret_val));
+                if (val != mp_const_none) {
+                    if (mp_obj_is_small_int(val)) {
+                        ret = MP_OBJ_SMALL_INT_VALUE(val);
+                    } else {
+                        mp_obj_print(val, PRINT_STR);
+                        mp_print_str(&mp_plat_print, "\n");
+                        ret = PYEXEC_UNHANDLED_EXCEPTION;
+                    }
+                } else {
+                    ret = 0;
+                }
+            #else
             ret = pyexec_system_exit;
+            #endif
         } else { // other exception
             mp_obj_print_exception(&mp_plat_print, MP_OBJ_FROM_PTR(nlr.ret_val));
-            ret = 0;
+            #if MICROPY_ENABLE_EXIT_CODE_HANDLING
+            ret = PYEXEC_UNHANDLED_EXCEPTION;
+            #endif
         }
     }
     #if MICROPY_ENABLE_VM_ABORT
